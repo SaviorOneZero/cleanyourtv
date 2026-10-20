@@ -140,6 +140,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Tile width the loader was last asked to draw banners at; the grid's layout corrects a cold-start estimate. */
     private int loaderTileWidth;
     private boolean started;
+    /** A loader result waits while the owner is arranging tiles; apply the latest snapshot after saving. */
+    private boolean appsRefreshPending;
     /** Module cards (res/values/config.xml, module_cards): discovered on resume, shown only after the owner's Show. */
     private boolean moduleCards;
     /** config settings_key_keycodes / settings_key_panel, so the Settings button works on Home without HomeKeyService. */
@@ -612,6 +614,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * ones and cards stay off for this process.
      */
     private void reloadTiles() {
+        appsRefreshPending = false;
         if (reordering) endReorder();   // an app installed or removed while reordering: keep the order so far
         // Read these before setTiles(): rebinding can move focus to the first tile and overwrite them.
         final String returnKey = lastFocusedKey;
@@ -639,6 +642,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** The loader found different tiles: the first ones of a cold start, or a package change. */
     private void onAppsChanged() {
         if (isDestroyed()) return;
+        if (reordering) {
+            appsRefreshPending = true;
+            return;
+        }
         // The first tiles get the full welcome (entrance, focus); later changes must not steal focus.
         reloadApps(adapter.appCount() == 0);
     }
@@ -944,7 +951,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 Toast.makeText(this, R.string.reorder_not_saved, Toast.LENGTH_SHORT).show();
             }
         }
-        if (fillDockLeavesSlots) reloadTiles();   // the empty dock slots left out while reordering come back
+        if (appsRefreshPending) {
+            // Use the focus-restoring path too: the deferred result may remove the focused tile.
+            if (started) onAppsChanged();
+        } else if (fillDockLeavesSlots) {
+            reloadTiles();   // the empty dock slots left out while reordering come back
+        }
     }
 
     /**
